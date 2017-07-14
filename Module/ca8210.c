@@ -66,6 +66,7 @@
 #include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/workqueue.h>
+#include <linux/if_arp.h>
 
 #include <net/ieee802154_netdev.h>
 #include <net/mac802154.h>
@@ -355,8 +356,10 @@ struct ca8210_test {
  *                           transfer has been retried
  */
 struct ca8210_priv {
+	struct net_device *netdev;
 	struct spi_device *spi;
 	struct ieee802154_hw *hw;
+	struct wpan_phy *phy;
 	bool hw_registered;
 	spinlock_t lock;
 	struct workqueue_struct *mlme_workqueue;
@@ -769,7 +772,7 @@ static void ca8210_rx_done(struct cas_control *cas_ctl)
 			cascoda_api_upstream(buf, len, priv->spi);
 	}
 
-	ca8210_net_rx(priv->hw, buf, len);
+	// ca8210_net_rx(priv->hw, buf, len);
 	if (buf[0] == SPI_MCPS_DATA_CONFIRM) {
 		if (buf[3] == MAC_TRANSACTION_OVERFLOW) {
 			dev_info(
@@ -2387,18 +2390,22 @@ static int ca8210_set_promiscuous_mode(struct ieee802154_hw *hw, const bool on)
 	return link_to_linux_err(status);
 }
 
-static const struct ieee802154_ops ca8210_phy_ops = {
-	.start = ca8210_start,
-	.xmit_async = ca8210_xmit_async,
-	.ed = ca8210_get_ed,
-	.set_channel = ca8210_set_channel,
-	.set_hw_addr_filt = ca8210_set_hw_addr_filt,
-	.set_txpower = ca8210_set_tx_power,
-	.set_cca_mode = ca8210_set_cca_mode,
-	.set_cca_ed_level = ca8210_set_cca_ed_level,
-	.set_csma_params = ca8210_set_csma_params,
-	.set_frame_retries = ca8210_set_frame_retries,
-	.set_promiscuous_mode = ca8210_set_promiscuous_mode
+/* TODO: Document */
+static const struct cfg802154_ops /* TODO: Name? */hm_ops = {
+	// .set_channel            = ca8210_set_channel,
+	// .set_cca_mode           = ca8210_set_cca_mode,
+	// .set_cca_ed_level       = ca8210_set_cca_ed_level,
+	// .set_tx_power           = ca8210_set_tx_power,
+	// .set_pan_id             = ca8210_set_pan_id,
+	// .set_short_addr         = ca8210_set_short_addr,
+	// .set_backoff_exponent   = ca8210_set_backoff_exponent,
+	// .set_max_csma_backoffs  = ca8210_set_max_csma_backoffs,
+	// .set_max_frame_retries  = ca8210_set_max_frame_retries,
+	// .set_lbt_mode           = ca8210_set_lbt_mode,
+	// .set_ackreq_default     = ca8210_set_ackreq_default,
+#ifdef CONFIG_IEEE802154_NL802154_EXPERIMENTAL
+	/* TODO: Security table functions */
+#endif
 };
 
 /* Test/EVBME Interface */
@@ -2971,40 +2978,6 @@ static const s32 ca8210_ed_levels[CA8210_MAX_ED_LEVELS] = {
 };
 
 /**
- * ca8210_hw_setup() - Populate the ieee802154_hw phy attributes with the
- *                     ca8210's defaults
- * @ca8210_hw:  Pointer to ieee802154_hw to populate
- */
-static void ca8210_hw_setup(struct ieee802154_hw *ca8210_hw)
-{
-	/* Support channels 11-26 */
-	ca8210_hw->phy->supported.channels[0] = CA8210_VALID_CHANNELS;
-	ca8210_hw->phy->supported.tx_powers_size = CA8210_MAX_TX_POWERS;
-	ca8210_hw->phy->supported.tx_powers = ca8210_tx_powers;
-	ca8210_hw->phy->supported.cca_ed_levels_size = CA8210_MAX_ED_LEVELS;
-	ca8210_hw->phy->supported.cca_ed_levels = ca8210_ed_levels;
-	ca8210_hw->phy->current_channel = 18;
-	ca8210_hw->phy->current_page = 0;
-	ca8210_hw->phy->transmit_power = 800;
-	ca8210_hw->phy->cca.mode = NL802154_CCA_ENERGY_CARRIER;
-	ca8210_hw->phy->cca.opt = NL802154_CCA_OPT_ENERGY_CARRIER_AND;
-	ca8210_hw->phy->cca_ed_level = -9800;
-	ca8210_hw->phy->symbol_duration = 16;
-	ca8210_hw->phy->lifs_period = 40;
-	ca8210_hw->phy->sifs_period = 12;
-	ca8210_hw->flags =
-		IEEE802154_HW_AFILT |
-		IEEE802154_HW_OMIT_CKSUM |
-		IEEE802154_HW_FRAME_RETRIES |
-		IEEE802154_HW_PROMISCUOUS |
-		IEEE802154_HW_CSMA_PARAMS;
-	ca8210_hw->phy->flags =
-		WPAN_PHY_FLAG_TXPOWER |
-		WPAN_PHY_FLAG_CCA_ED_LEVEL |
-		WPAN_PHY_FLAG_CCA_MODE;
-}
-
-/**
  * ca8210_test_interface_init() - Initialise the test file interface
  * @priv:  Pointer to private data structure
  *
@@ -3066,6 +3039,103 @@ static void ca8210_test_interface_clear(struct ca8210_priv *priv)
 	dev_info(&priv->spi->dev, "Test interface removed\n");
 }
 
+static const struct net_device_ops ca8210_ndo = {
+	// .ndo_open             = ca8210_netdev_open,
+	// .ndo_stop             = ca8210_netdev_stop,
+	// .ndo_start_xmit       = ca8210_netdev_xmit,
+	// .ndo_do_ioctl         = ca8210_netdev_ioctl,
+	// .ndo_set_mac_address  = ca8210_set_mac_addr,
+};
+
+static const struct ieee802154_mlme_ops ca8210_mlme = {
+	// .assoc_req = ca8210_assoc_req,
+	// .assoc_resp = ca8210_assoc_resp,
+	// .disassoc_req = ca8210_disassoc_req,
+	// .start_req = ca8210_start_req,
+	// .scan_req = ca8210_scan_req,
+	// .get_phy = ca8210_get_phy,
+	// .get_pan_id = ca8210_get_pan_id,
+	// .get_short_addr = ca8210_get_short_addr,
+	// .get_dsn = ca8210_get_dsn,
+	// .get_bsn = ca8210_get_bsn,
+};
+
+/* TODO: Document */
+static void ca8210_phy_setup(struct wpan_phy *phy)
+{
+	phy->current_channel              = 18;
+	phy->current_page                 = 0;
+	/* 2.4 GHz O-QPSK 802.15.4-2003 */
+	phy->supported.channels[0]       |= 0x7FFF800;
+	phy->supported.min_minbe          = 0;
+	phy->supported.max_minbe          = 8; /* TODO: Make this dynamic? */
+	phy->supported.min_maxbe          = 3;
+	phy->supported.max_maxbe          = 8;
+	phy->supported.min_csma_backoffs  = 0;
+	phy->supported.max_csma_backoffs  = 5;
+	phy->supported.min_frame_retries  = 0;
+	phy->supported.max_frame_retries  = 7;
+	phy->supported.tx_powers_size     = CA8210_MAX_TX_POWERS;
+	phy->supported.cca_ed_levels_size = CA8210_MAX_ED_LEVELS;
+	phy->supported.tx_powers          = ca8210_tx_powers;
+	phy->supported.cca_ed_levels      = ca8210_ed_levels;
+	phy->transmit_power               = 800; /* mBm */
+	phy->cca.mode                     = 3;
+	phy->cca.opt                      = NL802154_CCA_OPT_ENERGY_CARRIER_AND;
+	phy->cca_ed_level                 = -9800;
+	phy->symbol_duration              = 16;
+	phy->lifs_period                  = 40;
+	phy->sifs_period                  = 12;
+}
+
+/* TODO: Document */
+static void ca8210_netdev_destructor(struct net_device *dev)
+{
+	struct ca8210_priv *priv = netdev_priv(dev);
+	if (priv->phy) {
+		wpan_phy_unregister(priv->phy);
+		wpan_phy_free(priv->phy);
+		priv->phy = NULL;
+		dev_info(
+			&priv->spi->dev,
+			"Unregistered & freed wpan_phy.\n"
+		);
+	}
+	free_netdev(dev);
+	priv->netdev = NULL;
+}
+
+/* TODO: Document */
+static void ca8210_netdev_setup(struct net_device *dev)
+{
+	dev->addr_len = IEEE802154_ADDR_LEN;
+	// memset(dev->broadcast, 0xff, IEEE802154_ADDR_LEN); /* TODO: ?? must be short */
+	/* TODO: Populate features */
+	// dev->features = NETIF_F_NO_CSUM;
+	dev->mtu = 127; /* TODO: Is this okay? */
+	dev->tx_queue_len = 5; /* TODO: Check this */
+	dev->netdev_ops = &ca8210_ndo;
+	dev->ml_priv = &ca8210_mlme;
+	// dev->needs_free_netdev = false;
+	dev->type = ARPHRD_IEEE802154;
+	dev->flags = IFF_NOARP | IFF_BROADCAST;
+	dev->destructor = ca8210_netdev_destructor;
+}
+
+static void ca8210_priv_init(struct ca8210_priv *priv)
+{
+	spin_lock_init(&priv->lock);
+	priv->async_tx_pending = false;
+	priv->sync_up = 0;
+	priv->sync_down = 0;
+	priv->promiscuous = false;
+	priv->retries = 0;
+	init_completion(&priv->ca8210_is_awake);
+	init_completion(&priv->spi_transfer_complete);
+	init_completion(&priv->sync_exchange_complete);
+	spi_set_drvdata(priv->spi, priv);
+}
+
 /**
  * ca8210_remove() - Shut down a ca8210 upon being disconnected
  * @priv:  Pointer to private data structure
@@ -3099,14 +3169,11 @@ static int ca8210_remove(struct spi_device *spi_device)
 			priv->sync_up
 		);
 		ca8210_dev_com_clear(spi_device->dev.driver_data);
-		if (priv->hw) {
-			if (priv->hw_registered)
-				ieee802154_unregister_hw(priv->hw);
-			ieee802154_free_hw(priv->hw);
-			priv->hw = NULL;
+		if (priv->netdev) {
+			unregister_netdev(priv->netdev);
 			dev_info(
 				&spi_device->dev,
-				"Unregistered & freed ieee802154_hw.\n"
+				"Unregistered & freed net_device.\n"
 			);
 		}
 		if (IS_ENABLED(CONFIG_IEEE802154_CA8210_DEBUGFS))
@@ -3125,43 +3192,36 @@ static int ca8210_remove(struct spi_device *spi_device)
 static int ca8210_probe(struct spi_device *spi_device)
 {
 	struct ca8210_priv *priv;
-	struct ieee802154_hw *hw;
+	struct net_device *netdev;
+	struct wpan_phy *phy;
 	struct ca8210_platform_data *pdata;
 	int ret;
 
 	dev_info(&spi_device->dev, "Inserting ca8210\n");
+	netdev = alloc_netdev(sizeof(*priv), "wpan%d", NET_NAME_ENUM, ca8210_netdev_setup);
+	dev_dbg(&spi_device->dev, "allocd netdev\n");
+	/* TODO: Check netdev */
+	ca8210_netdev_setup(netdev);
+	phy = wpan_phy_new(&hm_ops, 0);
+	dev_dbg(&spi_device->dev, "called wpan_phy_new\n");
+	/* TODO: Check phy */
+	phy->privid = priv;
+	ca8210_phy_setup(phy);
+	wpan_phy_set_dev(phy, &spi_device->dev);
+	SET_NETDEV_DEV(netdev, &phy->dev);
 
-	/* allocate ieee802154_hw and private data */
-	hw = ieee802154_alloc_hw(sizeof(struct ca8210_priv), &ca8210_phy_ops);
-	if (!hw) {
-		dev_crit(&spi_device->dev, "ieee802154_alloc_hw failed\n");
-		ret = -ENOMEM;
-		goto error;
-	}
-
-	priv = hw->priv;
-	priv->hw = hw;
+	priv = netdev_priv(netdev);
+	priv->phy = phy;
+	priv->netdev = netdev;
 	priv->spi = spi_device;
-	hw->parent = &spi_device->dev;
-	spin_lock_init(&priv->lock);
-	priv->async_tx_pending = false;
-	priv->hw_registered = false;
-	priv->sync_up = 0;
-	priv->sync_down = 0;
-	priv->promiscuous = false;
-	priv->retries = 0;
-	init_completion(&priv->ca8210_is_awake);
-	init_completion(&priv->spi_transfer_complete);
-	init_completion(&priv->sync_exchange_complete);
-	spi_set_drvdata(priv->spi, priv);
+	ca8210_priv_init(priv);
+
 	if (IS_ENABLED(CONFIG_IEEE802154_CA8210_DEBUGFS)) {
 		cascoda_api_upstream = ca8210_test_int_driver_write;
 		ca8210_test_interface_init(priv);
 	} else {
 		cascoda_api_upstream = NULL;
 	}
-	ca8210_hw_setup(hw);
-	ieee802154_random_extended_addr(&hw->phy->perm_extended_addr);
 
 	pdata = kmalloc(sizeof(*pdata), GFP_KERNEL);
 	if (!pdata) {
@@ -3222,12 +3282,16 @@ static int ca8210_probe(struct spi_device *spi_device)
 		}
 	}
 
-	ret = ieee802154_register_hw(hw);
+	ret = wpan_phy_register(phy);
 	if (ret) {
-		dev_crit(&spi_device->dev, "ieee802154_register_hw failed\n");
+		dev_crit(&spi_device->dev, "wpan_phy_register failed\n");
 		goto error;
 	}
-	priv->hw_registered = true;
+	ret = register_netdev(netdev);
+	if (ret) {
+		dev_crit(&spi_device->dev, "register_netdev failed\n");
+		goto error;
+	}
 
 	return 0;
 error:
