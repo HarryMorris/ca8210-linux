@@ -3284,6 +3284,7 @@ static void ca8210_netdev_destructor(struct net_device *dev)
 			"Unregistered & freed wpan_phy.\n"
 		);
 	}
+	kfree(dev->ieee802154_ptr);
 	free_netdev(dev);
 	priv->netdev = NULL;
 }
@@ -3303,6 +3304,20 @@ static void ca8210_netdev_setup(struct net_device *dev)
 	dev->type = ARPHRD_IEEE802154;
 	dev->flags = IFF_NOARP | IFF_BROADCAST;
 	dev->destructor = ca8210_netdev_destructor;
+}
+
+static void ca8210_mac_setup(struct wpan_dev *mac)
+{
+	mac->iftype = NL802154_IFTYPE_NODE;
+	mac->pan_id = 0xFFFF;
+	mac->short_addr = 0xFFFF;
+	mac->min_be = 3;
+	mac->max_be = 5;
+	mac->csma_retries = 4;
+	mac->frame_retries = 3;
+	mac->lbt = false;
+	mac->promiscuous_mode = false;
+	mac->ackreq = false;
 }
 
 static void ca8210_priv_init(struct ca8210_priv *priv)
@@ -3432,6 +3447,7 @@ static int ca8210_probe(struct spi_device *spi_device)
 	struct ca8210_priv *priv;
 	struct net_device *netdev;
 	struct wpan_phy *phy;
+	struct wpan_dev *mac;
 	int ret;
 
 	dev_info(&spi_device->dev, "Inserting ca8210\n");
@@ -3442,9 +3458,15 @@ static int ca8210_probe(struct spi_device *spi_device)
 	dev_dbg(&spi_device->dev, "called wpan_phy_new\n");
 	/* TODO: Check phy */
 	ca8210_phy_setup(phy);
+	mac = kmalloc(sizeof(struct wpan_dev), GFP_KERNEL);
+	/* TODO: Check mac? */
+	ca8210_mac_setup(mac);
 	phy->dev.platform_data = netdev;
 	wpan_phy_set_dev(phy, &spi_device->dev);
 	SET_NETDEV_DEV(netdev, &phy->dev);
+	netdev->ieee802154_ptr = mac;
+	mac->wpan_phy = phy;
+	mac->netdev = netdev;
 
 	priv = netdev_priv(netdev);
 	priv->phy = phy;
