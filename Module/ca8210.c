@@ -224,6 +224,7 @@
 #define HWME_GET_CONFIRM                      (0x13)
 #define HWME_WAKEUP_INDICATION                (0x15)
 #define TDME_SETSFR_CONFIRM                   (0x17)
+#define TDME_GETSFR_CONFIRM                   (0x18)
 
 /* SPI command IDs */
 /* bit indicating a confirm or indication from slave to master */
@@ -254,8 +255,10 @@
 #define SPI_HWME_WAKEUP_INDICATION     (HWME_WAKEUP_INDICATION + SPI_S2M)
 
 #define SPI_TDME_SETSFR_REQUEST        (TDME_SETSFR_REQUEST + SPI_SYN)
+#define SPI_TDME_GETSFR_REQUEST        (TDME_GETSFR_REQUEST + SPI_SYN)
 #define SPI_TDME_SET_REQUEST           (TDME_SET_REQUEST + SPI_SYN)
 #define SPI_TDME_SETSFR_CONFIRM        (TDME_SETSFR_CONFIRM + SPI_S2M + SPI_SYN)
+#define SPI_TDME_GETSFR_CONFIRM        (TDME_GETSFR_CONFIRM + SPI_S2M + SPI_SYN)
 
 /* TDME SFR addresses */
 /* Page 0 */
@@ -481,6 +484,11 @@ struct tdme_setsfr_request_pset {
 	u8         sfr_value;
 };
 
+struct tdme_getsfr_request_pset {
+	u8         sfr_page;
+	u8         sfr_address;
+};
+
 /* uplink functions parameter set definitions */
 struct hwme_set_confirm_pset {
 	u8         status;
@@ -500,6 +508,13 @@ struct tdme_setsfr_confirm_pset {
 	u8         sfr_address;
 };
 
+struct tdme_getsfr_confirm_pset {
+	u8         status;
+	u8         sfr_page;
+	u8         sfr_address;
+	u8         sfr_value;
+};
+
 struct mac_message {
 	u8      command_id;
 	u8      length;
@@ -509,9 +524,11 @@ struct mac_message {
 		struct hwme_set_request_pset        hwme_set_req;
 		struct hwme_get_request_pset        hwme_get_req;
 		struct tdme_setsfr_request_pset     tdme_set_sfr_req;
+		struct tdme_getsfr_request_pset     tdme_get_sfr_req;
 		struct hwme_set_confirm_pset        hwme_set_cnf;
 		struct hwme_get_confirm_pset        hwme_get_cnf;
 		struct tdme_setsfr_confirm_pset     tdme_set_sfr_cnf;
+		struct tdme_getsfr_confirm_pset     tdme_get_sfr_cnf;
 		u8                                  u8param;
 		u8                                  status;
 		u8                                  payload[148];
@@ -1107,6 +1124,30 @@ static int (*ca821x_api_downstream)(
 ) = ca8210_spi_exchange;
 
 /* Cascoda API / 15.4 SAP Primitives */
+
+static u8 tdme_getsfr_request_sync(
+	u8            sfr_page,
+	u8            sfr_address,
+	u8           *sfr_value,
+	void         *device_ref
+)
+{
+	struct mac_message command, response;
+	command.command_id = SPI_TDME_GETSFR_REQUEST;
+	command.length = 2;
+	command.pdata.tdme_get_sfr_req.sfr_page = sfr_page;
+	command.pdata.tdme_get_sfr_req.sfr_address = sfr_address;
+
+	if (ca821x_api_downstream(&command.command_id, command.length + 2, &response.command_id, device_ref))
+		return MAC_SYSTEM_ERROR;
+
+	if (response.command_id != SPI_TDME_GETSFR_CONFIRM)
+		return MAC_SYSTEM_ERROR;
+
+	*sfr_value = response.pdata.tdme_get_sfr_cnf.sfr_value;
+
+	return response.pdata.tdme_get_sfr_cnf.status;
+} // End of TDME_GETSFR_request_sync()
 
 /**
  * tdme_setsfr_request_sync() - TDME_SETSFR_request/confirm according to API
