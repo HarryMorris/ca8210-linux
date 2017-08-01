@@ -3256,7 +3256,7 @@ static int ca8210_remove(struct spi_device *spi_device)
 
 /**
  * ca8210_probe() - Set up a connected ca8210 upon being detected by the system
- * @priv:  Pointer to private data structure
+ * @spi_device:  Pointer to connected ca8210 spi device struct
  *
  * Return: 0 or linux error code
  */
