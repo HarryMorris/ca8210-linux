@@ -222,7 +222,7 @@
 #define MLME_START_CONFIRM                    (0x0F)
 #define HWME_SET_CONFIRM                      (0x12)
 #define HWME_GET_CONFIRM                      (0x13)
-#define HWME_WAKEUP_INDICATION		      (0x15)
+#define HWME_WAKEUP_INDICATION                (0x15)
 #define TDME_SETSFR_CONFIRM                   (0x17)
 
 /* SPI command IDs */
