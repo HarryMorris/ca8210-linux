@@ -2218,13 +2218,14 @@ static int ca8210_get_ed(struct ieee802154_hw *hw, u8 *level)
  * Return: 0 or linux error code
  */
 static int ca8210_set_channel(
-	struct ieee802154_hw  *hw,
-	u8                     page,
-	u8                     channel
+	struct wpan_phy  *phy,
+	u8                page,
+	u8                channel
 )
 {
 	u8 status;
-	struct ca8210_priv *priv = hw->priv;
+	struct ca8210_priv *priv;
+	memcpy(&priv, wpan_phy_priv(phy), sizeof(priv));
 
 	status = mlme_set_request_sync(
 		PHY_CURRENT_CHANNEL,
@@ -2239,100 +2240,10 @@ static int ca8210_set_channel(
 			"error setting channel, MLME-SET.confirm status = %d\n",
 			status
 		);
+		return link_to_linux_err(status);
 	}
-	return link_to_linux_err(status);
-}
-
-/**
- * ca8210_set_hw_addr_filt() - Sets the address filtering parameters of the
- *                             ca8210
- * @hw:       ieee802154_hw of target ca8210
- * @filt:     Filtering parameters
- * @changed:  Bitmap representing which parameters to change
- *
- * Effectively just sets the actual addressing information identifying this node
- * as all filtering is performed by the ca8210 as detailed in the IEEE 802.15.4
- * 2006 specification.
- *
- * Return: 0 or linux error code
- */
-static int ca8210_set_hw_addr_filt(
-	struct ieee802154_hw            *hw,
-	struct ieee802154_hw_addr_filt  *filt,
-	unsigned long                    changed
-)
-{
-	u8 status = 0;
-	struct ca8210_priv *priv = hw->priv;
-
-	if (changed & IEEE802154_AFILT_PANID_CHANGED) {
-		status = mlme_set_request_sync(
-			MAC_PAN_ID,
-			0,
-			2,
-			&filt->pan_id, priv->spi
-		);
-		if (status) {
-			dev_err(
-				&priv->spi->dev,
-				"error setting pan id, MLME-SET.confirm status = %d",
-				status
-			);
-			return link_to_linux_err(status);
-		}
-	}
-	if (changed & IEEE802154_AFILT_SADDR_CHANGED) {
-		status = mlme_set_request_sync(
-			MAC_SHORT_ADDRESS,
-			0,
-			2,
-			&filt->short_addr, priv->spi
-		);
-		if (status) {
-			dev_err(
-				&priv->spi->dev,
-				"error setting short address, MLME-SET.confirm status = %d",
-				status
-			);
-			return link_to_linux_err(status);
-		}
-	}
-	if (changed & IEEE802154_AFILT_IEEEADDR_CHANGED) {
-		status = mlme_set_request_sync(
-			NS_IEEE_ADDRESS,
-			0,
-			8,
-			&filt->ieee_addr,
-			priv->spi
-		);
-		if (status) {
-			dev_err(
-				&priv->spi->dev,
-				"error setting ieee address, MLME-SET.confirm status = %d",
-				status
-			);
-			return link_to_linux_err(status);
-		}
-	}
-	/* TODO: Should use MLME_START to set coord bit? */
+	phy->current_channel = channel;
 	return 0;
-}
-
-/**
- * ca8210_set_tx_power() - Sets the transmit power of the ca8210
- * @hw:   ieee802154_hw of target ca8210
- * @mbm:  Transmit power in mBm (dBm*100)
- *
- * Return: 0 or linux error code
- */
-static int ca8210_set_tx_power(struct ieee802154_hw *hw, s32 mbm)
-{
-	struct ca8210_priv *priv = hw->priv;
-
-	mbm /= 100;
-	return link_to_linux_err(
-		mlme_set_request_sync(PHY_TRANSMIT_POWER, 0, 1, &mbm, priv->spi)
-	);
 }
 
 /**
@@ -2343,13 +2254,14 @@ static int ca8210_set_tx_power(struct ieee802154_hw *hw, s32 mbm)
  * Return: 0 or linux error code
  */
 static int ca8210_set_cca_mode(
-	struct ieee802154_hw       *hw,
+	struct wpan_phy            *phy,
 	const struct wpan_phy_cca  *cca
 )
 {
 	u8 status;
 	u8 cca_mode;
-	struct ca8210_priv *priv = hw->priv;
+	struct ca8210_priv *priv;
+	memcpy(&priv, wpan_phy_priv(phy), sizeof(priv));
 
 	cca_mode = cca->mode & 3;
 	if (cca_mode == 3 && cca->opt == NL802154_CCA_OPT_ENERGY_CARRIER_OR) {
@@ -2383,11 +2295,12 @@ static int ca8210_set_cca_mode(
  *
  * Return: 0 or linux error code
  */
-static int ca8210_set_cca_ed_level(struct ieee802154_hw *hw, s32 level)
+static int ca8210_set_cca_ed_level(struct wpan_phy *phy, s32 level)
 {
 	u8 status;
 	u8 ed_threshold = (level / 100) * 2 + 256;
-	struct ca8210_priv *priv = hw->priv;
+	struct ca8210_priv *priv;
+	memcpy(&priv, wpan_phy_priv(phy), sizeof(priv));
 
 	status = hwme_set_request_sync(
 		HWME_EDTHRESHOLD,
@@ -2403,6 +2316,185 @@ static int ca8210_set_cca_ed_level(struct ieee802154_hw *hw, s32 level)
 		);
 	}
 	return link_to_linux_err(status);
+}
+
+/**
+ * ca8210_set_tx_power() - Sets the transmit power of the ca8210
+ * @hw:   ieee802154_hw of target ca8210
+ * @mbm:  Transmit power in mBm (dBm*100)
+ *
+ * Return: 0 or linux error code
+ */
+static int ca8210_set_tx_power(struct wpan_phy *phy, s32 mbm)
+{
+	struct ca8210_priv *priv;
+	memcpy(&priv, wpan_phy_priv(phy), sizeof(priv));
+
+	mbm /= 100;
+	return link_to_linux_err(
+		mlme_set_request_sync(PHY_TRANSMIT_POWER, 0, 1, &mbm, priv->spi)
+	);
+}
+
+static int ca8210_set_pan_id(
+	struct wpan_phy *phy,
+	struct wpan_dev *dev,
+	__le16 pan_id
+)
+{
+	u8 status;
+	struct ca8210_priv *priv;
+	memcpy(&priv, wpan_phy_priv(phy), sizeof(priv));
+
+	status = mlme_set_request_sync(
+		MAC_PAN_ID,
+		0,
+		2,
+		&pan_id,
+		priv->spi
+	);
+	if (status) {
+		dev_err(
+			&priv->spi->dev,
+			"error setting pan id, MLME-SET.confirm status = %d",
+			status
+		);
+		return link_to_linux_err(status);
+	}
+	dev->pan_id = pan_id;
+	return 0;
+}
+
+static int ca8210_set_short_addr(
+	struct wpan_phy *phy,
+	struct wpan_dev *dev,
+	__le16 short_addr
+)
+{
+	u8 status;
+	struct ca8210_priv *priv;
+	memcpy(&priv, wpan_phy_priv(phy), sizeof(priv));
+	dev_info(&priv->spi->dev, "setting short_addr\n");
+
+	status = mlme_set_request_sync(
+		MAC_SHORT_ADDRESS,
+		0,
+		2,
+		&short_addr,
+		priv->spi
+	);
+	if (status) {
+		dev_err(
+			&priv->spi->dev,
+			"error setting short address, MLME-SET.confirm status = %d",
+			status
+		);
+		return link_to_linux_err(status);
+	}
+	dev->short_addr = short_addr;
+	return 0;
+}
+
+static int ca8210_set_backoff_exponent(
+	struct wpan_phy *phy,
+	struct wpan_dev *dev,
+	u8 min_be,
+	u8 max_be
+)
+{
+	u8 status;
+	struct ca8210_priv *priv;
+	memcpy(&priv, wpan_phy_priv(phy), sizeof(priv));
+
+	status = mlme_set_request_sync(MAC_MIN_BE, 0, 1, &min_be, priv->spi);
+	if (status) {
+		dev_err(
+			&priv->spi->dev,
+			"error setting min be, MLME-SET.confirm status = %d",
+			status
+		);
+		return link_to_linux_err(status);
+	}
+	dev->min_be = min_be;
+	status = mlme_set_request_sync(MAC_MAX_BE, 0, 1, &max_be, priv->spi);
+	if (status) {
+		dev_err(
+			&priv->spi->dev,
+			"error setting max be, MLME-SET.confirm status = %d",
+			status
+		);
+		return link_to_linux_err(status);
+	}
+	dev->max_be = max_be;
+	return 0;
+}
+
+static int ca8210_set_max_csma_backoffs(
+	struct wpan_phy *phy,
+	struct wpan_dev *dev,
+	u8 max_csma_backoffs
+)
+{
+	u8 status;
+	struct ca8210_priv *priv;
+	memcpy(&priv, wpan_phy_priv(phy), sizeof(priv));
+
+	status = mlme_set_request_sync(
+		MAC_MAX_CSMA_BACKOFFS,
+		0,
+		1,
+		&max_csma_backoffs,
+		priv->spi
+	);
+	if (status) {
+		dev_err(
+			&priv->spi->dev,
+			"error setting max csma backoffs, MLME-SET.confirm status = %d",
+			status
+		);
+		return link_to_linux_err(status);
+	}
+	dev->csma_retries = max_csma_backoffs;
+	return 0;
+}
+
+/**
+ * ca8210_set_frame_retries() - Sets the maximum frame retries of the ca8210
+ * @hw:       ieee802154_hw of target ca8210
+ * @retries:  Number of retries
+ *
+ * Sets the number of times to retry a transmission if no acknowledgment was
+ * was received from the other end when one was requested.
+ *
+ * Return: 0 or linux error code
+ */
+static int ca8210_set_max_frame_retries(
+	struct wpan_phy *phy,
+	struct wpan_dev *dev,
+	s8 max_frame_retries
+)
+{
+	u8 status;
+	struct ca8210_priv *priv;
+	memcpy(&priv, wpan_phy_priv(phy), sizeof(priv));
+
+	status = mlme_set_request_sync(
+		MAC_MAX_FRAME_RETRIES,
+		0,
+		1,
+		&max_frame_retries,
+		priv->spi
+	);
+	if (status) {
+		dev_err(
+			&priv->spi->dev,
+			"error setting frame retries, MLME-SET.confirm status = %d",
+			status
+		);
+		return link_to_linux_err(status);
+	}
+	dev->frame_retries = max_frame_retries;
+	return 0;
 }
 
 /**
@@ -2459,38 +2551,6 @@ static int ca8210_set_csma_params(
 	return link_to_linux_err(status);
 }
 
-/**
- * ca8210_set_frame_retries() - Sets the maximum frame retries of the ca8210
- * @hw:       ieee802154_hw of target ca8210
- * @retries:  Number of retries
- *
- * Sets the number of times to retry a transmission if no acknowledgment was
- * was received from the other end when one was requested.
- *
- * Return: 0 or linux error code
- */
-static int ca8210_set_frame_retries(struct ieee802154_hw *hw, s8 retries)
-{
-	u8 status;
-	struct ca8210_priv *priv = hw->priv;
-
-	status = mlme_set_request_sync(
-		MAC_MAX_FRAME_RETRIES,
-		0,
-		1,
-		&retries,
-		priv->spi
-	);
-	if (status) {
-		dev_err(
-			&priv->spi->dev,
-			"error setting frame retries, MLME-SET.confirm status = %d",
-			status
-		);
-	}
-	return link_to_linux_err(status);
-}
-
 static int ca8210_set_promiscuous_mode(struct ieee802154_hw *hw, const bool on)
 {
 	u8 status;
@@ -2517,17 +2577,15 @@ static int ca8210_set_promiscuous_mode(struct ieee802154_hw *hw, const bool on)
 
 /* TODO: Document */
 static const struct cfg802154_ops /* TODO: Name? */hm_ops = {
-	// .set_channel            = ca8210_set_channel,
-	// .set_cca_mode           = ca8210_set_cca_mode,
-	// .set_cca_ed_level       = ca8210_set_cca_ed_level,
-	// .set_tx_power           = ca8210_set_tx_power,
-	// .set_pan_id             = ca8210_set_pan_id,
-	// .set_short_addr         = ca8210_set_short_addr,
-	// .set_backoff_exponent   = ca8210_set_backoff_exponent,
-	// .set_max_csma_backoffs  = ca8210_set_max_csma_backoffs,
-	// .set_max_frame_retries  = ca8210_set_max_frame_retries,
-	// .set_lbt_mode           = ca8210_set_lbt_mode,
-	// .set_ackreq_default     = ca8210_set_ackreq_default,
+	.set_channel            = ca8210_set_channel,
+	.set_cca_mode           = ca8210_set_cca_mode,
+	.set_cca_ed_level       = ca8210_set_cca_ed_level,
+	.set_tx_power           = ca8210_set_tx_power,
+	.set_pan_id             = ca8210_set_pan_id,
+	.set_short_addr         = ca8210_set_short_addr,
+	.set_backoff_exponent   = ca8210_set_backoff_exponent,
+	.set_max_csma_backoffs  = ca8210_set_max_csma_backoffs,
+	.set_max_frame_retries  = ca8210_set_max_frame_retries,
 #ifdef CONFIG_IEEE802154_NL802154_EXPERIMENTAL
 	/* TODO: Security table functions */
 #endif
