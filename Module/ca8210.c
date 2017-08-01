@@ -217,6 +217,7 @@
 /* upstream */
 #define MCPS_DATA_INDICATION                  (0x00)
 #define MCPS_DATA_CONFIRM                     (0x01)
+#define MLME_GET_CONFIRM                      (0x08)
 #define MLME_RESET_CONFIRM                    (0x0A)
 #define MLME_SET_CONFIRM                      (0x0E)
 #define MLME_START_CONFIRM                    (0x0F)
@@ -241,6 +242,7 @@
 #define SPI_MCPS_DATA_CONFIRM          (MCPS_DATA_CONFIRM + SPI_S2M)
 
 #define SPI_MLME_ASSOCIATE_REQUEST     (MLME_ASSOCIATE_REQUEST)
+#define SPI_MLME_GET_REQUEST           (MLME_GET_REQUEST + SPI_SYN)
 #define SPI_MLME_RESET_REQUEST         (MLME_RESET_REQUEST + SPI_SYN)
 #define SPI_MLME_SET_REQUEST           (MLME_SET_REQUEST + SPI_SYN)
 #define SPI_MLME_START_REQUEST         (MLME_START_REQUEST + SPI_SYN)
@@ -254,6 +256,7 @@
 #define SPI_HWME_GET_CONFIRM           (HWME_GET_CONFIRM + SPI_S2M + SPI_SYN)
 #define SPI_HWME_WAKEUP_INDICATION     (HWME_WAKEUP_INDICATION + SPI_S2M)
 
+#define SPI_MLME_GET_CONFIRM           (MLME_GET_CONFIRM + SPI_S2M + SPI_SYN)
 #define SPI_TDME_SETSFR_REQUEST        (TDME_SETSFR_REQUEST + SPI_SYN)
 #define SPI_TDME_GETSFR_REQUEST        (TDME_GETSFR_REQUEST + SPI_SYN)
 #define SPI_TDME_SET_REQUEST           (TDME_SET_REQUEST + SPI_SYN)
@@ -462,6 +465,11 @@ struct mcps_data_request_pset {
 	u8              msdu[MAX_DATA_SIZE];
 };
 
+struct mlme_get_request_pset {
+	u8         pib_attribute;
+	u8         pib_attribute_index;
+};
+
 struct mlme_set_request_pset {
 	u8         pib_attribute;
 	u8         pib_attribute_index;
@@ -491,6 +499,14 @@ struct tdme_getsfr_request_pset {
 };
 
 /* uplink functions parameter set definitions */
+struct mlme_get_confirm_pset {
+	u8         status;
+	u8         pib_attribute;
+	u8         pib_attribute_index;
+	u8         pib_attribute_length;
+	u8         pib_attribute_value[MAX_ATTRIBUTE_SIZE];
+};
+
 struct hwme_set_confirm_pset {
 	u8         status;
 	u8         hw_attribute;
@@ -521,11 +537,13 @@ struct mac_message {
 	u8      length;
 	union {
 		struct mcps_data_request_pset       data_req;
+		struct mlme_get_request_pset        get_req;
 		struct mlme_set_request_pset        set_req;
 		struct hwme_set_request_pset        hwme_set_req;
 		struct hwme_get_request_pset        hwme_get_req;
 		struct tdme_setsfr_request_pset     tdme_set_sfr_req;
 		struct tdme_getsfr_request_pset     tdme_get_sfr_req;
+		struct mlme_get_confirm_pset        get_cnf;
 		struct hwme_set_confirm_pset        hwme_set_cnf;
 		struct hwme_get_confirm_pset        hwme_get_cnf;
 		struct tdme_setsfr_confirm_pset     tdme_set_sfr_cnf;
@@ -1730,6 +1748,42 @@ static u8 mlme_set_request_sync(
 
 	return response.pdata.status;
 }
+
+static u8 mlme_get_request_sync(
+	u8            pib_attribute,
+	u8            pib_attribute_index,
+	u8           *pib_attribute_length,
+	const void   *pib_attribute_value,
+	void         *device_ref
+)
+{
+	struct mac_message command, response;
+	if (pib_attribute == PHY_TRANSMIT_POWER) {
+		response.pdata.status = tdme_gettxpower(((u8*)pib_attribute_value), device_ref);
+		*pib_attribute_length = 1;
+	} else {
+		command.command_id = SPI_MLME_GET_REQUEST;
+		command.length = sizeof(struct mlme_get_request_pset);
+		command.pdata.get_req.pib_attribute = pib_attribute;
+		command.pdata.get_req.pib_attribute_index = pib_attribute_index;
+
+		if (ca821x_api_downstream(&command.command_id, command.length + 2, &response.command_id, device_ref))
+			return MAC_SYSTEM_ERROR;
+
+		if (response.command_id != SPI_MLME_GET_CONFIRM)
+			return MAC_SYSTEM_ERROR;
+
+		if (response.pdata.get_cnf.status == MAC_SUCCESS) {
+			*pib_attribute_length =
+				response.pdata.get_cnf.pib_attribute_length;
+			memcpy((void*)pib_attribute_value,
+				response.pdata.get_cnf.pib_attribute_value,
+				response.pdata.get_cnf.pib_attribute_length);
+		}
+	}
+
+	return response.pdata.status;
+} // End of MLME_GET_request_sync()
 
 /**
  * hwme_set_request_sync() - HWME_SET_request/confirm according to API Spec
