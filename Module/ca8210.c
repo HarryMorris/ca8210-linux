@@ -3319,6 +3319,24 @@ static void ca8210_priv_init(struct ca8210_priv *priv)
 	spi_set_drvdata(priv->spi, priv);
 }
 
+static int ca8210_retrieve_extaddr(struct ca8210_priv *priv)
+{
+	u8 status, length, address[IEEE802154_ADDR_LEN];
+	status = mlme_get_request_sync(
+		NS_IEEE_ADDRESS,
+		0,
+		&length,
+		address,
+		priv->spi
+	);
+	if(status)
+		return link_to_linux_err(status);
+	memcpy(&priv->phy->perm_extended_addr, address, IEEE802154_ADDR_LEN);
+	memcpy(&priv->netdev->perm_addr, address, IEEE802154_ADDR_LEN);
+	memcpy(&priv->netdev->ieee802154_ptr->extended_addr, address, IEEE802154_ADDR_LEN);
+	return 0;
+}
+
 /**
  * ca8210_remove() - Shut down a ca8210 upon being disconnected
  * @priv:  Pointer to private data structure
@@ -3465,6 +3483,7 @@ static int ca8210_probe(struct spi_device *spi_device)
 		}
 	}
 
+	ca8210_retrieve_extaddr(priv);
 	ret = wpan_phy_register(phy);
 	if (ret) {
 		dev_crit(&spi_device->dev, "wpan_phy_register failed\n");
