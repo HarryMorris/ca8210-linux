@@ -331,6 +331,25 @@ struct ca8210_test {
 };
 
 /**
+ * struct ca8210_platform_data - ca8210 platform data structure
+ * @extclockenable: true if the external clock is to be enabled
+ * @extclockfreq:   frequency of the external clock
+ * @extclockgpio:   ca8210 output gpio of the external clock
+ * @gpio_reset:     gpio number of ca8210 reset line
+ * @gpio_irq:       gpio number of ca8210 interrupt line
+ * @irq_id:         identifier for the ca8210 irq
+ *
+ */
+struct ca8210_platform_data {
+	bool extclockenable;
+	unsigned int extclockfreq;
+	unsigned int extclockgpio;
+	int gpio_reset;
+	int gpio_irq;
+	int irq_id;
+};
+
+/**
  * struct ca8210_priv - ca8210 private data structure
  * @spi:                    pointer to the ca8210 spi device object
  * @hw:                     pointer to the ca8210 ieee802154_hw object
@@ -363,6 +382,7 @@ struct ca8210_priv {
 	struct spi_device *spi;
 	struct ieee802154_hw *hw;
 	struct wpan_phy *phy;
+	struct ca8210_platform_data *pdata;
 	bool hw_registered;
 	spinlock_t lock;
 	struct workqueue_struct *mlme_workqueue;
@@ -391,25 +411,6 @@ struct ca8210_priv {
 struct work_priv_container {
 	struct work_struct work;
 	struct ca8210_priv *priv;
-};
-
-/**
- * struct ca8210_platform_data - ca8210 platform data structure
- * @extclockenable: true if the external clock is to be enabled
- * @extclockfreq:   frequency of the external clock
- * @extclockgpio:   ca8210 output gpio of the external clock
- * @gpio_reset:     gpio number of ca8210 reset line
- * @gpio_irq:       gpio number of ca8210 interrupt line
- * @irq_id:         identifier for the ca8210 irq
- *
- */
-struct ca8210_platform_data {
-	bool extclockenable;
-	unsigned int extclockfreq;
-	unsigned int extclockgpio;
-	int gpio_reset;
-	int gpio_irq;
-	int irq_id;
 };
 
 /**
