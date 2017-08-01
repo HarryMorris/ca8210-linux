@@ -3319,6 +3319,43 @@ static void ca8210_priv_init(struct ca8210_priv *priv)
 	spi_set_drvdata(priv->spi, priv);
 }
 
+static int ca8210_pdata_init(struct ca8210_priv *priv)
+{
+	struct ca8210_platform_data *pdata;
+	int ret = 0;
+
+	pdata = kmalloc(sizeof(*pdata), GFP_KERNEL);
+	if (!pdata) {
+		return -ENOMEM;
+	}
+
+	ret = ca8210_get_platform_data(priv->spi, pdata);
+	if (ret) {
+		dev_crit(&priv->spi->dev, "ca8210_get_platform_data failed\n");
+		return ret;
+	}
+	priv->spi->dev.platform_data = pdata;
+	priv->pdata = pdata;
+
+	ret = ca8210_dev_com_init(priv);
+	if (ret) {
+		dev_crit(&priv->spi->dev, "ca8210_dev_com_init failed\n");
+		return ret;
+	}
+	ret = ca8210_reset_init(priv->spi);
+	if (ret) {
+		dev_crit(&priv->spi->dev, "ca8210_reset_init failed\n");
+		return ret;
+	}
+
+	ret = ca8210_interrupt_init(priv->spi);
+	if (ret) {
+		dev_crit(&priv->spi->dev, "ca8210_interrupt_init failed\n");
+		return ret;
+	}
+	return ret;
+}
+
 static int ca8210_retrieve_extaddr(struct ca8210_priv *priv)
 {
 	u8 status, length, address[IEEE802154_ADDR_LEN];
@@ -3395,19 +3432,17 @@ static int ca8210_probe(struct spi_device *spi_device)
 	struct ca8210_priv *priv;
 	struct net_device *netdev;
 	struct wpan_phy *phy;
-	struct ca8210_platform_data *pdata;
 	int ret;
 
 	dev_info(&spi_device->dev, "Inserting ca8210\n");
 	netdev = alloc_netdev(sizeof(*priv), "wpan%d", NET_NAME_ENUM, ca8210_netdev_setup);
 	dev_dbg(&spi_device->dev, "allocd netdev\n");
 	/* TODO: Check netdev */
-	ca8210_netdev_setup(netdev);
-	phy = wpan_phy_new(&hm_ops, 0);
+	phy = wpan_phy_new(&hm_ops, sizeof(priv));
 	dev_dbg(&spi_device->dev, "called wpan_phy_new\n");
 	/* TODO: Check phy */
-	phy->privid = priv;
 	ca8210_phy_setup(phy);
+	phy->dev.platform_data = netdev;
 	wpan_phy_set_dev(phy, &spi_device->dev);
 	SET_NETDEV_DEV(netdev, &phy->dev);
 
@@ -3415,6 +3450,7 @@ static int ca8210_probe(struct spi_device *spi_device)
 	priv->phy = phy;
 	priv->netdev = netdev;
 	priv->spi = spi_device;
+	memcpy(&phy->priv, &priv, sizeof(priv));
 	ca8210_priv_init(priv);
 
 	if (IS_ENABLED(CONFIG_IEEE802154_CA8210_DEBUGFS)) {
@@ -3424,35 +3460,7 @@ static int ca8210_probe(struct spi_device *spi_device)
 		cascoda_api_upstream = NULL;
 	}
 
-	pdata = kmalloc(sizeof(*pdata), GFP_KERNEL);
-	if (!pdata) {
-		ret = -ENOMEM;
-		goto error;
-	}
-
-	ret = ca8210_get_platform_data(priv->spi, pdata);
-	if (ret) {
-		dev_crit(&spi_device->dev, "ca8210_get_platform_data failed\n");
-		goto error;
-	}
-	priv->spi->dev.platform_data = pdata;
-
-	ret = ca8210_dev_com_init(priv);
-	if (ret) {
-		dev_crit(&spi_device->dev, "ca8210_dev_com_init failed\n");
-		goto error;
-	}
-	ret = ca8210_reset_init(priv->spi);
-	if (ret) {
-		dev_crit(&spi_device->dev, "ca8210_reset_init failed\n");
-		goto error;
-	}
-
-	ret = ca8210_interrupt_init(priv->spi);
-	if (ret) {
-		dev_crit(&spi_device->dev, "ca8210_interrupt_init failed\n");
-		goto error;
-	}
+	ca8210_pdata_init(priv);
 
 	msleep(100);
 
@@ -3464,8 +3472,8 @@ static int ca8210_probe(struct spi_device *spi_device)
 		goto error;
 	}
 
-	if (pdata->extclockenable) {
-		ret = ca8210_config_extern_clk(pdata, priv->spi, 1);
+	if (priv->pdata->extclockenable) {
+		ret = ca8210_config_extern_clk(priv->pdata, priv->spi, 1);
 		if (ret) {
 			dev_crit(
 				&spi_device->dev,
