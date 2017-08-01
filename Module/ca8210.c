@@ -1428,6 +1428,35 @@ static u8 tdme_checkpibattribute(
 	return status;
 }
 
+static u8 tdme_gettxpower(u8 *txp, void *device_ref)
+{
+	u8 status;
+	u8 paib;
+	s8 txp_val;
+
+	status = tdme_getsfr_request_sync(0, CA8210_SFR_PACFG, &paib, device_ref); // read PACFGIB
+
+	if (     paib  >= 0x32)  txp_val =  8;
+	else if (paib  >= 0x22)  txp_val =  7;
+	else if (paib  >= 0x18)  txp_val =  6;
+	else if (paib  >= 0x10)  txp_val =  5;
+	else if (paib  >= 0x0C)  txp_val =  4;
+	else if (paib  >= 0x08)  txp_val =  3;
+	else if (paib  >= 0x05)  txp_val =  2;
+	else if (paib  >= 0x03)  txp_val =  1;
+	else if (paib  >  0x00)  txp_val =  0;
+	else                     txp_val = -1;
+
+	/* limit to 6 bit */
+	*txp = (u8)(txp_val) & 0x3F;
+
+	//                      /* tolerance +-1 dB */
+	// txp += (0x01 << 6);  /* tolerance +-3 dB */
+	// txp += (0x02 << 6);  /* tolerance +-6 dB */
+
+	return status;
+}
+
 /**
  * tdme_settxpower() - Sets the tx power for MLME_SET phyTransmitPower
  * @txp:        Transmit Power
